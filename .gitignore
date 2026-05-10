@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.bak
+*.bak_encoding*
+*.bak_encoding_explicit*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
