@@ -103,7 +103,6 @@ Versión: `18.0.1.0.2`
 Nombre técnico: `split_delivery_truck`  
 Categoría: `Inventory`  
 Licencia: `Other proprietary`  
-Ambiente objetivo inicial: `LOCAL`  
 
 ## Política de desarrollo
 
