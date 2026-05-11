@@ -99,7 +99,7 @@ Antes de instalarlo, se debe validar:
 
 ## Estado actual
 
-Versión: `18.0.1.0.2`  
+Versión: `18.0.1.0.3`  
 Nombre técnico: `split_delivery_truck`  
 Categoría: `Inventory`  
 Licencia: `Other proprietary`  
