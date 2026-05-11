@@ -91,13 +91,6 @@ class StockPicking(models.Model):
             raise UserError(_(
                 "No se puede dividir una recepción en estado '%(state)s'."
             ) % {"state": self.state})
-        if self.split_truck_done:
-            raise UserError(_("Esta recepción ya fue dividida por camiones."))
-        if self.split_truck_parent_picking_id:
-            raise UserError(_(
-                "Esta recepción es hija de una división previa "
-                "(origen: %(parent)s) y no puede dividirse de nuevo."
-            ) % {"parent": self.split_truck_parent_picking_id.name})
         if not self.move_ids:
             raise UserError(_("La recepción no tiene movimientos de inventario."))
 

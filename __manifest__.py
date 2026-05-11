@@ -1,6 +1,6 @@
 {
     "name": "split_delivery_truck",
-    "version": "18.0.1.0.2",
+    "version": "18.0.1.0.3",
     "category": "Inventory",
     "summary": "Split incoming receipts into proportional transfers by number of trucks",
     "author": "Axxen Consulting",
