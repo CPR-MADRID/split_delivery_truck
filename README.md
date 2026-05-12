@@ -109,3 +109,27 @@ Licencia: `Other proprietary`
 Este módulo debe mantenerse como módulo independiente, plug in / plug out, sin modificar Odoo core, Odoo Enterprise, OCA ni módulos externos no autorizados.
 
 Cualquier ajuste futuro debe realizarse de forma versionada, documentada, probada y validada antes de avanzar a ambientes superiores.
+
+## Cambio relevante de la versión 18.0.1.0.3
+
+La versión `18.0.1.0.3` permite volver a dividir recepciones entrantes por camiones tomando como base la cantidad vigente del picking seleccionado.
+
+Los campos de trazabilidad de división por camión se mantienen, pero ya no bloquean por sí mismos una nueva división cuando la recepción sigue siendo elegible operativamente.
+
+## Instalación rápida
+
+1. Colocar el módulo `split_delivery_truck` en una ruta incluida dentro del `addons_path`.
+2. Actualizar la lista de aplicaciones en Odoo.
+3. Instalar el módulo `split_delivery_truck`.
+4. Verificar que no exista otra variante instalada que duplique botones, campos, métodos o vistas sobre `stock.picking`.
+5. Probar el flujo completo en una base no productiva antes de desplegar en producción.
+
+## Restricción de convivencia
+
+No se recomienda instalar este módulo junto con otro módulo que implemente la misma lógica de división de recepciones por camiones sobre `stock.picking`, ya que podrían duplicarse botones, campos, vistas o lógica funcional.
+
+## Licencia y uso
+
+Este repositorio es público para fines de visibilidad del código, auditoría técnica y revisión de ingeniería, así como el uso de la comunidad. Cualquier uso, copia, modificación, fusión o distribución deberá mencionar explícitamente al autor Axxen Consulting y al titular Rodrigo Madrid.
+
+No se concede permiso para clonar, copiar, sublicenciar o vender este software sin autorización previa y por escrito del titular.

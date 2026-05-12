@@ -10,3 +10,39 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Secrets / entorno local
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Entornos virtuales / tooling local
+.venv/
+venv/
+env/
+
+# Dumps / backups / bases locales
+*.sql
+*.dump
+*.backup
+*.sqlite
+*.db
+*.zip
+*.7z
+filestore/
+backup/
+backups/
+dump/
+dumps/
+
+# Python / Odoo local
+.pytest_cache/
+.coverage
+htmlcov/
