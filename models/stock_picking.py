@@ -1,9 +1,10 @@
 import logging
 import uuid
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 from odoo import _, fields, models
 from odoo.exceptions import UserError
-from odoo.tools.float_utils import float_compare, float_round
+from odoo.tools.float_utils import float_compare
 
 _logger = logging.getLogger(__name__)
 
@@ -130,6 +131,15 @@ class StockPicking(models.Model):
             raise UserError(_(
                 "No se puede dividir: hay controles de calidad procesados en esta recepción."
             ))
+        # Bloquear si cualquier línea elegible tiene cantidad operativa editable <= 1
+        for move in self.move_ids:
+            op_qty = self._split_truck_get_operational_qty(move)
+            if op_qty <= 1.0:
+                raise UserError(_(
+                    "En el movimiento de recepción %(picking)s existe una línea con "
+                    "cantidad menor o igual a 1. Aumente la cantidad a recibir o "
+                    "duplique la transferencia en lugar de dividirla."
+                ) % {"picking": self.name})
         # Los registros de báscula no bloquean la división si el picking no está done/cancel
         # (ya validado en _split_truck_validate_can_open_split_wizard).
         # Los registros existentes permanecen en el picking original.
@@ -161,6 +171,22 @@ class StockPicking(models.Model):
             if log.state not in _UNPROCESSED_STATES:
                 return True
         return False
+
+    # -------------------------------------------------------------------------
+    # Helper: cantidad operativa editable del movimiento (antes de validar)
+    # -------------------------------------------------------------------------
+
+    def _split_truck_get_operational_qty(self, move):
+        """Return the editable operational qty for a move before picking validation.
+
+        Prefers move.quantity (Odoo 18 operational field); falls back to the
+        positive sum of move_line_ids.quantity.  Never reads product_uom_qty.
+        """
+        if 'quantity' in move._fields:
+            qty = move.quantity
+            if qty and qty > 0:
+                return float(qty)
+        return float(sum(ml.quantity for ml in move.move_line_ids if ml.quantity > 0))
 
     # -------------------------------------------------------------------------
     # Helper: sincronizar línea operativa del picking original tras dividir
@@ -215,29 +241,30 @@ class StockPicking(models.Model):
     # -------------------------------------------------------------------------
 
     def _split_truck_compute_split_quantities(self, move, trucks_total):
-        """Devuelve (qty_original, qty_por_camion_nuevo). El residuo queda en el original."""
-        rounding = move.product_uom.rounding
-        total_qty = move.product_uom_qty
-        qty_per_new = float_round(
-            total_qty / trucks_total,
-            precision_rounding=rounding,
-            rounding_method="DOWN",
-        )
-        if float_compare(qty_per_new, 0.0, precision_rounding=rounding) <= 0:
+        """Returns (qty_original, qty_per_child). Fixed 2-decimal precision. Residue to original.
+
+        Uses Decimal arithmetic to avoid binary float drift.  Never reads
+        product_uom.rounding or product_uom_qty.
+        """
+        total_qty = Decimal(str(self._split_truck_get_operational_qty(move)))
+        precision = Decimal("0.01")
+        child_count = Decimal(str(trucks_total - 1))
+
+        child_qty = (total_qty / Decimal(str(trucks_total))).quantize(precision, rounding=ROUND_DOWN)
+
+        if child_qty <= Decimal("0"):
             raise UserError(_(
                 "La cantidad por camión para el producto '%(product)s' "
-                "(%(qty)s / %(trucks)d camiones) es demasiado pequeña "
-                "para la precisión de la unidad de medida. No se puede dividir."
+                "(%(qty)s / %(trucks)d camiones) es demasiado pequeña. No se puede dividir."
             ) % {
                 "product": move.product_id.display_name,
-                "qty": total_qty,
+                "qty": float(total_qty),
                 "trucks": trucks_total,
             })
-        qty_original = float_round(
-            total_qty - qty_per_new * (trucks_total - 1),
-            precision_rounding=rounding,
-        )
-        return qty_original, qty_per_new
+
+        original_qty = (total_qty - child_qty * child_count).quantize(precision, rounding=ROUND_HALF_UP)
+
+        return float(original_qty), float(child_qty)
 
     # -------------------------------------------------------------------------
     # Preparación de valores
@@ -307,11 +334,12 @@ class StockPicking(models.Model):
         original_moves = self.move_ids
         original_state = self.state
 
-        # Snapshot de demanda original por (product_id, product_uom, purchase_line_id)
+        # Snapshot de cantidad operativa original por (product_id, product_uom, purchase_line_id)
         original_snapshot = {}
         for move in original_moves:
             key = (move.product_id.id, move.product_uom.id, move.purchase_line_id.id)
-            original_snapshot[key] = original_snapshot.get(key, 0.0) + move.product_uom_qty
+            op_qty = self._split_truck_get_operational_qty(move)
+            original_snapshot[key] = original_snapshot.get(key, 0.0) + op_qty
 
         # Pre-calcular cantidades para todos los movimientos antes de modificar nada
         split_qty_map = {}
@@ -397,9 +425,8 @@ class StockPicking(models.Model):
 
         for key, original_qty in original_snapshot.items():
             split_qty = split_totals.get(key, 0.0)
-            uom = self.env["uom.uom"].browse(key[1]) if key[1] else None
-            rounding = uom.rounding if uom else 0.01
-            if float_compare(split_qty, original_qty, precision_rounding=rounding) != 0:
+            # Fixed 2-decimal precision: does not depend on product_uom.rounding
+            if float_compare(split_qty, original_qty, precision_rounding=0.01) != 0:
                 product = self.env["product.product"].browse(key[0])
                 raise UserError(_(
                     "Error de integridad: la demanda total tras la división no coincide. "
