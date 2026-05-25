@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## 18.0.1.0.5 - 2026-05-25
+
+### Fixed
+- Quality checks ejecutados ya **no bloquean** la división de recepciones. La función
+  `_split_truck_has_processed_quality_checks()` se usa únicamente como aviso informativo
+  en el wizard de confirmación, nunca como bloqueo de validación.
+- La división usa `stock.move.product_uom_qty` como base canónica del cálculo, en lugar
+  de la cantidad operativa editable (`move.quantity`). Esto garantiza coherencia entre la
+  demanda declarada y las cantidades distribuidas entre camiones.
+- El snapshot de integridad pre-split ahora suma `product_uom_qty` de cada movimiento,
+  consistente con la base canónica de cálculo.
+
+### Changed
+- `_split_truck_validate_can_split_by_truck`: eliminado el bloqueo por quality checks
+  procesados y la validación previa de múltiples líneas positivas por movimiento (se
+  mantiene en `_split_truck_sync_original_move_lines_after_split`). El bloqueo por
+  `product_uom_qty <= 1.0` ahora lee directamente `move.product_uom_qty`.
+- `_split_truck_compute_split_quantities`: cambia base de `_split_truck_get_operational_qty`
+  a `move.product_uom_qty`; docstring actualizado.
+- `_split_truck_get_operational_qty`: docstring actualizado con nota sobre base canónica
+  v18.0.1.0.5; método conservado por compatibilidad con llamadas externas.
+- `_split_truck_execute_split_by_truck_count`: snapshot usa `move.product_uom_qty`.
+- `__manifest__.py`: versión `18.0.1.0.5`, categoría `Inventory/Inventory`, summary en español.
+- `wizards/split_delivery_truck_wizard.py`: `action_confirm` muestra aviso informativo
+  diferenciado cuando existen quality checks ejecutados; formato de mensaje con parámetros
+  nombrados.
+
+### Added
+- Método `_split_truck_ensure_quality_checks_for_children(new_pickings)`: safety net que
+  genera quality checks pendientes en pickings hijos si no fueron creados durante
+  `action_confirm()` o `action_assign()`. No duplica checks existentes.
+
 ## 18.0.1.0.4 - 2026-05-12
 
 ### Fixed
