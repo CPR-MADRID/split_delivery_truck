@@ -114,33 +114,48 @@ class StockPicking(models.Model):
                 raise UserError(_(
                     "No se puede dividir: hay líneas de operación con paquetes asignados."
                 ))
-        # Bloquear si la demanda de cualquier movimiento es <= 1 (base: product_uom_qty)
+        # Bloquear si un movimiento tiene múltiples líneas operativas con cantidad
         for move in self.move_ids:
-            if move.product_uom_qty <= 1.0:
+            operational_lines = move.move_line_ids.filtered(
+                lambda ml: ml.picking_id == self and (ml.quantity > 0 or ml.qty_done > 0)
+            )
+            if len(operational_lines) >= 2:
                 raise UserError(_(
                     "No se puede dividir automáticamente: el movimiento del producto "
                     "'%(product)s' tiene múltiples líneas operativas con cantidad. "
                     "Limpie o simplifique las líneas antes de dividir."
                 ) % {"product": move.product_id.display_name})
-        if self._split_truck_has_processed_quality_checks():
-            raise UserError(_(
-                "No se puede dividir: hay controles de calidad procesados en esta recepción."
-            ))
+        # Bloquear si la demanda de cualquier movimiento es <= 1 (base: product_uom_qty)
+        for move in self.move_ids:
+            if move.product_uom_qty <= 1.0:
+                raise UserError(_(
+                    "En el movimiento de recepción %(picking)s existe una línea con "
+                    "cantidad menor o igual a 1. Aumente la cantidad a recibir o "
+                    "duplique la transferencia en lugar de dividirla."
+                ) % {"picking": self.name})
+        
         # Quality checks ejecutados y pesajes procesados NO bloquean la división.
         # Sus registros permanecen en el picking original.
         # Los pickings hijos generan sus propios checks mediante el mecanismo estándar.
         # Los registros de báscula no bloquean la división si el picking no está done/cancel
         # (ya validado en _split_truck_validate_can_open_split_wizard).
         # Los registros existentes permanecen en el picking original.
-
+        
     # -------------------------------------------------------------------------
     # Verificaciones de calidad y báscula
     # -------------------------------------------------------------------------
 
     def _split_truck_has_processed_quality_checks(self):
+        """Return True si hay quality checks ejecutados en este picking.
+
+        Usado por el wizard de confirmación para mostrar aviso informativo.
+        No es un bloqueo de validación — la división está permitida con checks ejecutados.
+        Los checks existentes permanecen en el picking original; los pickings hijos
+        generan los suyos mediante el mecanismo estándar de Odoo 18.
+        """
         self.ensure_one()
         # Si el picking expone quality_check_done y está en False, la recepción aún no
-        # completó calidad: no bloquear la división.
+        # completó calidad: no hay checks ejecutados.
         if 'quality_check_done' in self._fields and not self.quality_check_done:
             return False
         # Estados que se consideran pendientes/no procesados — fácil de ajustar
