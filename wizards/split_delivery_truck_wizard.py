@@ -63,9 +63,20 @@ class SplitDeliveryTruckWizard(models.TransientModel):
         # Recalcular al momento de confirmar para evitar datos desactualizados
         already = self.picking_id._split_truck_count_checked_in_visitors()
         trucks_total = self.trucks_in_gate + already
-        confirmation_message = _(
-            "Estás por dividir la recepción %s en %d parte(s) iguales. ¿Quieres confirmar?"
-        ) % (self.picking_id.name, trucks_total)
+        # Mostrar aviso especial si hay quality checks ejecutados en el picking original
+        if self.picking_id._split_truck_has_processed_quality_checks():
+            confirmation_message = _(
+                "El movimiento tiene checks de calidad ejecutados. "
+                "La recepción se dividirá de manera equitativa; los checks existentes "
+                "permanecerán asociados a la transferencia original y las nuevas "
+                "transferencias deberán generar sus propios checks de calidad pendientes. "
+                "¿Quiere continuar?"
+            )
+        else:
+            confirmation_message = _(
+                "Estás por dividir la recepción %(picking)s en %(total)d parte(s) iguales. "
+                "¿Quieres confirmar?"
+            ) % {"picking": self.picking_id.name, "total": trucks_total}
         return {
             "type": "ir.actions.act_window",
             "name": _("Confirmar división por camiones"),
