@@ -131,9 +131,16 @@ class StockPicking(models.Model):
     # -------------------------------------------------------------------------
 
     def _split_truck_has_processed_quality_checks(self):
+        """Return True si hay quality checks ejecutados en este picking.
+
+        Usado por el wizard de confirmación para mostrar aviso informativo.
+        No es un bloqueo de validación — la división está permitida con checks ejecutados.
+        Los checks existentes permanecen en el picking original; los pickings hijos
+        generan los suyos mediante el mecanismo estándar de Odoo 18.
+        """
         self.ensure_one()
         # Si el picking expone quality_check_done y está en False, la recepción aún no
-        # completó calidad: no bloquear la división.
+        # completó calidad: no hay checks ejecutados.
         if 'quality_check_done' in self._fields and not self.quality_check_done:
             return False
         # Estados que se consideran pendientes/no procesados — fácil de ajustar
