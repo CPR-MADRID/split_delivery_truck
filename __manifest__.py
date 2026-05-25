@@ -1,8 +1,8 @@
 {
     "name": "split_delivery_truck",
-    "version": "18.0.1.0.4",
-    "category": "Inventory",
-    "summary": "Split incoming receipts into proportional transfers by number of trucks",
+    "version": "18.0.1.0.5",
+    "category": "Inventory/Inventory",
+    "summary": "Divide recepciones WH/IN en partes proporcionales al número de camiones",
     "author": "Axxen Consulting",
     "license": "Other proprietary",
     "depends": [

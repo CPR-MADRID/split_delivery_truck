@@ -42,8 +42,9 @@ El módulo bloquea la división cuando existen condiciones de riesgo operativo o
 - Traslados en estado `cancel`.
 - Operaciones con paquetes.
 - Estructuras de líneas no soportadas por la versión actual.
-- Condiciones donde la calidad ya fue procesada.
 - Casos donde dividir el traslado podría comprometer trazabilidad o consistencia.
+
+Los quality checks ejecutados y los pesajes procesados **no bloquean** la división. Sus registros permanecen en el picking original; los pickings hijos generan sus propios checks de calidad pendientes mediante el mecanismo estándar de Odoo.
 
 El estado `assigned` se considera una recepción disponible/preparada, no una recepción validada. Por lo tanto, no debe bloquearse únicamente por encontrarse en estado `assigned`.
 
@@ -99,9 +100,9 @@ Antes de instalarlo, se debe validar:
 
 ## Estado actual
 
-Versión: `18.0.1.0.3`  
+Versión: `18.0.1.0.5`  
 Nombre técnico: `split_delivery_truck`  
-Categoría: `Inventory`  
+Categoría: `Inventory/Inventory`  
 Licencia: `Other proprietary`  
 
 ## Política de desarrollo
@@ -109,6 +110,16 @@ Licencia: `Other proprietary`
 Este módulo debe mantenerse como módulo independiente, plug in / plug out, sin modificar Odoo core, Odoo Enterprise, OCA ni módulos externos no autorizados.
 
 Cualquier ajuste futuro debe realizarse de forma versionada, documentada, probada y validada antes de avanzar a ambientes superiores.
+
+## Cambio relevante de la versión 18.0.1.0.5
+
+La versión `18.0.1.0.5` permite dividir recepciones entrantes por camiones tomando como base la demanda del movimiento (`stock.move.product_uom_qty`).
+
+Los quality checks ejecutados y los pesajes procesados ya no bloquean por sí mismos la división cuando la recepción sigue siendo elegible operativamente. El wizard muestra un aviso informativo cuando existen checks ejecutados; la división procede normalmente y los pickings hijos generan sus propios checks de calidad pendientes.
+
+## Cambio relevante de la versión 18.0.1.0.4
+
+La versión `18.0.1.0.4` mejoró la precisión aritmética del cálculo de división usando `Decimal` con precisión fija de 2 decimales, eliminando la dependencia de `product_uom.rounding`. Introdujo el helper `_split_truck_get_operational_qty` para leer la cantidad operativa editable del movimiento.
 
 ## Cambio relevante de la versión 18.0.1.0.3
 

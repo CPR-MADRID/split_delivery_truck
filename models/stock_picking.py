@@ -108,41 +108,23 @@ class StockPicking(models.Model):
             raise UserError(_(
                 "No se puede dividir: existen movimientos en estado 'done' o 'cancel'."
             ))
-        # picked=True en estado assigned/confirmed/waiting no indica recepción efectiva;
-        # solo se bloquea por estado done/cancel (ya verificado arriba).
-        # Solo bloquear por paquetes; qty_done y quantity se sincronizan tras la división
+        # Bloquear si hay paquetes en líneas operativas
         for ml in self.move_line_ids:
             if ml.package_id or ml.result_package_id:
                 raise UserError(_(
                     "No se puede dividir: hay líneas de operación con paquetes asignados."
                 ))
-        # Bloquear si algún move tiene más de una línea operativa con cantidad positiva
+        # Bloquear si la demanda de cualquier movimiento es <= 1 (base: product_uom_qty)
         for move in self.move_ids:
-            positive_lines = move.move_line_ids.filtered(
-                lambda ml: ml.quantity > 0 or ml.qty_done > 0
-            )
-            if len(positive_lines) > 1:
-                raise UserError(_(
-                    "No se puede dividir automáticamente: el movimiento del producto "
-                    "'%(product)s' tiene múltiples líneas operativas con cantidad. "
-                    "Limpie o simplifique las líneas antes de dividir."
-                ) % {"product": move.product_id.display_name})
-        if self._split_truck_has_processed_quality_checks():
-            raise UserError(_(
-                "No se puede dividir: hay controles de calidad procesados en esta recepción."
-            ))
-        # Bloquear si cualquier línea elegible tiene cantidad operativa editable <= 1
-        for move in self.move_ids:
-            op_qty = self._split_truck_get_operational_qty(move)
-            if op_qty <= 1.0:
+            if move.product_uom_qty <= 1.0:
                 raise UserError(_(
                     "En el movimiento de recepción %(picking)s existe una línea con "
                     "cantidad menor o igual a 1. Aumente la cantidad a recibir o "
                     "duplique la transferencia en lugar de dividirla."
                 ) % {"picking": self.name})
-        # Los registros de báscula no bloquean la división si el picking no está done/cancel
-        # (ya validado en _split_truck_validate_can_open_split_wizard).
-        # Los registros existentes permanecen en el picking original.
+        # Quality checks ejecutados y pesajes procesados NO bloquean la división.
+        # Sus registros permanecen en el picking original.
+        # Los pickings hijos generan sus propios checks mediante el mecanismo estándar.
 
     # -------------------------------------------------------------------------
     # Verificaciones de calidad y báscula
@@ -181,6 +163,9 @@ class StockPicking(models.Model):
 
         Prefers move.quantity (Odoo 18 operational field); falls back to the
         positive sum of move_line_ids.quantity.  Never reads product_uom_qty.
+
+        Nota: desde v18.0.1.0.5 la lógica de división usa product_uom_qty como base.
+        Este método se mantiene por compatibilidad con llamadas externas.
         """
         if 'quantity' in move._fields:
             qty = move.quantity
@@ -243,10 +228,10 @@ class StockPicking(models.Model):
     def _split_truck_compute_split_quantities(self, move, trucks_total):
         """Returns (qty_original, qty_per_child). Fixed 2-decimal precision. Residue to original.
 
-        Uses Decimal arithmetic to avoid binary float drift.  Never reads
-        product_uom.rounding or product_uom_qty.
+        Uses Decimal arithmetic to avoid binary float drift.  Reads product_uom_qty
+        as canonical base for the split; never uses product_uom.rounding.
         """
-        total_qty = Decimal(str(self._split_truck_get_operational_qty(move)))
+        total_qty = Decimal(str(move.product_uom_qty))
         precision = Decimal("0.01")
         child_count = Decimal(str(trucks_total - 1))
 
@@ -334,12 +319,12 @@ class StockPicking(models.Model):
         original_moves = self.move_ids
         original_state = self.state
 
-        # Snapshot de cantidad operativa original por (product_id, product_uom, purchase_line_id)
+        # Snapshot de demanda original por (product_id, product_uom, purchase_line_id).
+        # Usa product_uom_qty como base; coherente con _split_truck_compute_split_quantities.
         original_snapshot = {}
         for move in original_moves:
             key = (move.product_id.id, move.product_uom.id, move.purchase_line_id.id)
-            op_qty = self._split_truck_get_operational_qty(move)
-            original_snapshot[key] = original_snapshot.get(key, 0.0) + op_qty
+            original_snapshot[key] = original_snapshot.get(key, 0.0) + move.product_uom_qty
 
         # Pre-calcular cantidades para todos los movimientos antes de modificar nada
         split_qty_map = {}
@@ -390,6 +375,11 @@ class StockPicking(models.Model):
                         np.name,
                         exc_info=True,
                     )
+
+        # Generar quality checks pendientes en pickings hijos.
+        # action_confirm() ya los crea mediante el override de quality_control.
+        # Este paso es safety net para triggers que requieren asignación previa.
+        self._split_truck_ensure_quality_checks_for_children(new_pickings)
 
         # Validar integridad antes de declarar éxito — rollback automático si falla
         self._split_truck_validate_split_total_integrity(original_snapshot, split_group_ref, trucks_total)
@@ -463,3 +453,41 @@ class StockPicking(models.Model):
                     "ref": self.split_truck_group_ref,
                 }
             )
+
+    # -------------------------------------------------------------------------
+    # Quality checks para pickings hijos
+    # -------------------------------------------------------------------------
+
+    def _split_truck_ensure_quality_checks_for_children(self, new_pickings):
+        """Safety net: genera quality checks pendientes para pickings hijos si no existen.
+
+        El módulo quality_control anula action_confirm() en stock.picking para crear
+        quality checks automáticamente según los quality control points aplicables.
+        Este método cubre triggers que requieren que action_assign() haya corrido primero.
+        Si los checks ya fueron creados en confirmar o asignar, no se duplican.
+        """
+        try:
+            self.env['quality.check']
+        except KeyError:
+            # quality_control no está instalado; nada que hacer
+            return
+
+        for np in new_pickings:
+            if 'check_ids' not in np._fields:
+                continue
+            if np.check_ids:
+                _logger.debug(
+                    "Picking hijo %s ya tiene quality checks; se omite generación duplicada.",
+                    np.name,
+                )
+                continue
+            if not hasattr(np, '_create_quality_checks'):
+                continue
+            try:
+                np._create_quality_checks()
+            except Exception:
+                _logger.warning(
+                    "No se pudo generar quality checks para el picking hijo %s.",
+                    np.name,
+                    exc_info=True,
+                )
