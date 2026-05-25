@@ -118,6 +118,19 @@ class StockPicking(models.Model):
         for move in self.move_ids:
             if move.product_uom_qty <= 1.0:
                 raise UserError(_(
+                    "No se puede dividir automáticamente: el movimiento del producto "
+                    "'%(product)s' tiene múltiples líneas operativas con cantidad. "
+                    "Limpie o simplifique las líneas antes de dividir."
+                ) % {"product": move.product_id.display_name})
+        if self._split_truck_has_processed_quality_checks():
+            raise UserError(_(
+                "No se puede dividir: hay controles de calidad procesados en esta recepción."
+            ))
+        # Bloquear si cualquier línea elegible tiene cantidad operativa editable <= 1
+        for move in self.move_ids:
+            op_qty = self._split_truck_get_operational_qty(move)
+            if op_qty <= 1.0:
+                raise UserError(_(
                     "En el movimiento de recepción %(picking)s existe una línea con "
                     "cantidad menor o igual a 1. Aumente la cantidad a recibir o "
                     "duplique la transferencia en lugar de dividirla."
@@ -125,6 +138,9 @@ class StockPicking(models.Model):
         # Quality checks ejecutados y pesajes procesados NO bloquean la división.
         # Sus registros permanecen en el picking original.
         # Los pickings hijos generan sus propios checks mediante el mecanismo estándar.
+        # Los registros de báscula no bloquean la división si el picking no está done/cancel
+        # (ya validado en _split_truck_validate_can_open_split_wizard).
+        # Los registros existentes permanecen en el picking original.
 
     # -------------------------------------------------------------------------
     # Verificaciones de calidad y báscula
@@ -227,11 +243,14 @@ class StockPicking(models.Model):
 
     def _split_truck_compute_split_quantities(self, move, trucks_total):
         """Returns (qty_original, qty_per_child). Fixed 2-decimal precision. Residue to original.
-
         Uses Decimal arithmetic to avoid binary float drift.  Reads product_uom_qty
         as canonical base for the split; never uses product_uom.rounding.
         """
         total_qty = Decimal(str(move.product_uom_qty))
+        Uses Decimal arithmetic to avoid binary float drift.  Never reads
+        product_uom.rounding or product_uom_qty.
+        """
+        total_qty = Decimal(str(self._split_truck_get_operational_qty(move)))
         precision = Decimal("0.01")
         child_count = Decimal(str(trucks_total - 1))
 
@@ -321,10 +340,12 @@ class StockPicking(models.Model):
 
         # Snapshot de demanda original por (product_id, product_uom, purchase_line_id).
         # Usa product_uom_qty como base; coherente con _split_truck_compute_split_quantities.
+        # Snapshot de cantidad operativa original por (product_id, product_uom, purchase_line_id)
         original_snapshot = {}
         for move in original_moves:
             key = (move.product_id.id, move.product_uom.id, move.purchase_line_id.id)
-            original_snapshot[key] = original_snapshot.get(key, 0.0) + move.product_uom_qty
+            op_qty = self._split_truck_get_operational_qty(move)
+            original_snapshot[key] = original_snapshot.get(key, 0.0) + op_qty
 
         # Pre-calcular cantidades para todos los movimientos antes de modificar nada
         split_qty_map = {}
